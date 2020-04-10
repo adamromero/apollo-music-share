@@ -7,20 +7,17 @@ import {
    CardMedia,
    CardActions,
    IconButton,
-   makeStyles
+   makeStyles,
 } from "@material-ui/core";
 
-import { PlayArrow, Save } from "@material-ui/icons";
+import { PlayArrow, Save, Pause } from "@material-ui/icons";
+import { useSubscription, useMutation } from "@apollo/react-hooks";
+import { GET_SONGS } from "../graphql/subscriptions";
+import { ADD_OR_REMOVE_FROM_QUEUE } from "../graphql/mutations";
+import { SongContext } from "../App";
 
 function SongList() {
-   let loading = false;
-
-   const song = {
-      title: "Offline P.K.",
-      artist: "Pinback",
-      thumbnail:
-         "https://img.discogs.com/uPJO7hSvrT0TRabSb-SkKG1jErU=/fit-in/599x600/filters:strip_icc():format(jpeg):mode_rgb():quality(90)/discogs-images/R-594833-1395690773-1297.jpeg.jpg"
-   };
+   const { data, loading, error } = useSubscription(GET_SONGS);
 
    if (loading) {
       return (
@@ -29,45 +26,79 @@ function SongList() {
                display: "flex",
                flexDirection: "column",
                alignItems: "center",
-               marginTop: 50
+               marginTop: 50,
             }}
          >
             <CircularProgress />
          </div>
       );
    }
+
+   if (error) {
+      return <div>Error fetching songs</div>;
+   }
+
    return (
       <div>
-         {Array.from({ length: 10 }, () => song).map((song, i) => (
-            <Song key={i} song={song} />
+         {data.songs.map((song) => (
+            <Song key={song.id} song={song} />
          ))}
       </div>
    );
 }
 
-const useStyles = makeStyles(theme => ({
+const useStyles = makeStyles((theme) => ({
    container: {
-      margin: theme.spacing(1)
+      margin: theme.spacing(1),
    },
    songInfoContainer: {
       display: "flex",
-      alignItems: "center"
+      alignItems: "center",
    },
    songInfo: {
       width: "100%",
       display: "flex",
-      justifyContent: "space-between"
+      justifyContent: "space-between",
    },
    thumbnail: {
       objectFit: "cover",
       width: 140,
-      height: 140
-   }
+      height: 140,
+   },
 }));
 
 function Song({ song }) {
+   const { id } = song;
    const classes = useStyles();
+   const [addOrRemoveFromQueue] = useMutation(ADD_OR_REMOVE_FROM_QUEUE, {
+      onCompleted: (data) => {
+         localStorage.setItem(
+            "queue",
+            JSON.stringify(data.addOrRemoveFromQueue)
+         );
+      },
+   });
+   const { state, dispatch } = React.useContext(SongContext);
+   const [currentSongPlaying, setCurrentSongPlaying] = React.useState(false);
    const { title, artist, thumbnail } = song;
+
+   React.useEffect(() => {
+      const isSongPlaying = state.isPlaying && id === state.song.id;
+      setCurrentSongPlaying(isSongPlaying);
+   }, [id, state.song.id, state.isPlaying]);
+
+   function handleTogglePlay() {
+      dispatch({ type: "SET_SONG", payload: { song } });
+      dispatch(
+         state.isPlaying ? { type: "PAUSE_SONG" } : { type: "PLAY_SONG" }
+      );
+   }
+
+   function handleAddOrRemoveFromQueue() {
+      addOrRemoveFromQueue({
+         variables: { input: { ...song, __typename: "Song" } },
+      });
+   }
 
    return (
       <Card className={classes.container}>
@@ -87,10 +118,18 @@ function Song({ song }) {
                   </Typography>
                </CardContent>
                <CardActions>
-                  <IconButton size="small" color="primary">
-                     <PlayArrow />
+                  <IconButton
+                     onClick={handleTogglePlay}
+                     size="small"
+                     color="primary"
+                  >
+                     {currentSongPlaying ? <Pause /> : <PlayArrow />}
                   </IconButton>
-                  <IconButton size="small" color="secondary">
+                  <IconButton
+                     onClick={handleAddOrRemoveFromQueue}
+                     size="small"
+                     color="secondary"
+                  >
                      <Save />
                   </IconButton>
                </CardActions>
